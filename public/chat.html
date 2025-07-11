@@ -1,0 +1,319 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Maddy's Chat Rooms</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      background: linear-gradient(to right, #f0f8ff, #e6f2ff);
+      margin: 0;
+      height: 100vh;
+      display: flex;
+      flex-direction: column;
+    }
+
+    header {
+      background: #007bff;
+      color: white;
+      padding: 10px 20px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    main {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      padding: 10px 20px;
+    }
+
+    .top-controls {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      margin-bottom: 10px;
+    }
+
+    input[type="text"], input[type="number"] {
+      padding: 8px;
+      width: 200px;
+      border: 2px solid #007BFF;
+      border-radius: 6px;
+      outline: none;
+    }
+
+    button {
+      padding: 8px 12px;
+      border: none;
+      background-color: #28a745;
+      color: white;
+      border-radius: 6px;
+      cursor: pointer;
+    }
+
+    button:hover {
+      background-color: #218838;
+    }
+
+    #chat_section {
+      display: flex;
+      flex-direction: column;
+      height: 500px;
+      border: 1px solid #ccc;
+      border-radius: 10px;
+      background: #fff;
+      overflow: hidden;
+    }
+
+    #chat_header {
+      padding: 10px;
+      background-color: #f0f0f0;
+      font-weight: bold;
+      border-bottom: 1px solid #ccc;
+    }
+
+    #chat_list {
+      flex: 1;
+      list-style-type: none;
+      padding: 10px;
+      margin: 0;
+      overflow-y: auto;
+    }
+
+    #chat_list li {
+      padding: 8px;
+      margin-bottom: 5px;
+      border-radius: 6px;
+      background-color: #e7f3ff;
+    }
+
+    #message_controls {
+      display: flex;
+      padding: 10px;
+      gap: 10px;
+      border-top: 1px solid #ccc;
+    }
+
+    #roomdm {
+      flex: 1;
+      padding: 10px;
+      border: 2px solid #007BFF;
+      border-radius: 6px;
+    }
+
+    #notification {
+      position: fixed;
+      top: 20px;
+      right: 20px;
+      background-color: #ff4d4d;
+      color: white;
+      padding: 12px 20px;
+      border-radius: 8px;
+      box-shadow: 0 0 10px rgba(0,0,0,0.2);
+      display: none;
+      z-index: 999;
+      font-weight: bold;
+      animation: fadeInOut 3s ease-in-out;
+    }
+
+    @keyframes fadeInOut {
+      0% { opacity: 0; transform: translateY(-20px); }
+      10% { opacity: 1; transform: translateY(0); }
+      90% { opacity: 1; }
+      100% { opacity: 0; transform: translateY(-20px); }
+    }
+  </style>
+</head>
+<body>
+
+  <header>
+    <h2>Maddy's Chat Rooms</h2>
+    <span id="userEmail"></span>
+  </header>
+
+  <main>
+    <div class="top-controls">
+      <input type="text" placeholder="Chat with user..." id="to" />
+      <input type="number" placeholder="Room No" id="room" />
+      <button onclick="openChat()">Open Chat</button>
+      <button onclick="joinRoomFn()">Join Room</button>
+      <button onclick="leaveRoom()">Leave Room</button>
+      <button onclick="logout()">Logout</button>
+      <button onclick="Disconnect()">Disconnect</button>
+    </div>
+
+    <div id="chat_section">
+      <div id="chat_header">Chat Room / DM: <span id="chat_target">None</span></div>
+      <ul id="chat_list"></ul>
+      <div id="message_controls">
+        <input type="text" placeholder="Type message..." id="roomdm" />
+        <button onclick="sendMessage()">Send</button>
+      </div>
+    </div>
+  </main>
+
+  <div id="notification"></div>
+
+  <script src="/socket.io/socket.io.js"></script>
+  <script>
+    const socket = io();
+    const myEmail = localStorage.getItem("email");
+    document.getElementById("userEmail").textContent = myEmail || "Guest";
+
+    let chatMode = "none";
+    let currentTarget = null;
+
+    if (!myEmail) {
+      window.location.href = "index.html";
+    } else {
+      socket.emit("register", myEmail);
+    }
+
+    function updateChatHeader(target) {
+      document.getElementById("chat_target").textContent = target || "None";
+    }
+
+    function showNotification(message, color = "#ff4d4d", sender = null) {
+      const notif = document.getElementById("notification");
+      notif.style.backgroundColor = color;
+      notif.textContent = message;
+      notif.style.display = "block";
+      notif.style.cursor = sender ? "pointer" : "default";
+
+      if (sender) {
+        notif.onclick = () => {
+          chatMode = "dm";
+          currentTarget = sender;
+          document.getElementById("to").value = sender;
+          socket.emit("load_dm", sender);
+          updateChatHeader(`DM: ${sender}`);
+          notif.style.display = "none";
+        };
+      } else {
+        notif.onclick = null;
+      }
+
+      setTimeout(() => {
+        notif.style.display = "none";
+        notif.onclick = null;
+      }, 6000);
+    }
+
+    function openChat() {
+      const to = document.getElementById("to").value.trim();
+      const room = document.getElementById("room").value.trim();
+
+      if (to) {
+        chatMode = "dm";
+        currentTarget = to;
+        socket.emit("load_dm", to);
+        updateChatHeader(`DM: ${to}`);
+      } else if (room) {
+        chatMode = "room";
+        currentTarget = room;
+        socket.emit("join_room", room);
+        updateChatHeader(`Room: ${room}`);
+      } else {
+        showNotification("Enter a username or room number to open chat");
+      }
+    }
+
+    function joinRoomFn() {
+      const room = document.getElementById("room").value.trim();
+      if (!room) return showNotification("Room number required");
+      chatMode = "room";
+      currentTarget = room;
+      socket.emit("join_room", room);
+      updateChatHeader(`Room: ${room}`);
+    }
+
+    function leaveRoom() {
+      socket.emit("leave_room");
+      chatMode = "none";
+      currentTarget = null;
+      document.getElementById("chat_list").innerHTML = "";
+      updateChatHeader("None");
+    }
+
+    function sendMessage() {
+      const message = document.getElementById("roomdm").value;
+      if (!message.trim()) return;
+
+      if (chatMode === "room") {
+        socket.emit("room_message", message);
+      } else if (chatMode === "dm") {
+        socket.emit("private_message", { to: currentTarget, message });
+      } else {
+        showNotification("Open a room or DM to send message");
+      }
+
+      document.getElementById("roomdm").value = "";
+    }
+
+    function logout() {
+      socket.emit("logout");
+      localStorage.removeItem("email");
+      window.location.href = "login.html";
+    }
+
+    function Disconnect() {
+      const confirmDelete = confirm("⚠️ This will delete your account and messages.\nContinue?");
+      if (!confirmDelete) return;
+
+      socket.emit("disconnect_user");
+      localStorage.removeItem("email");
+      showNotification("Disconnected and data cleared", "#343a40");
+      setTimeout(() => window.location.href = "index.html", 1000);
+    }
+
+    function renderChatList(history) {
+      const chatList = document.getElementById("chat_list");
+      chatList.innerHTML = "";
+      history.forEach(({ from, message }) => {
+        const li = document.createElement("li");
+        li.innerHTML = `<strong style="color: ${from === myEmail ? '#28a745' : '#000'}">${from === myEmail ? 'You' : from}:</strong> ${message}`;
+        li.style.backgroundColor = from === myEmail ? "#d4edda" : "#e7f3ff";
+        chatList.appendChild(li);
+      });
+      chatList.scrollTop = chatList.scrollHeight;
+    }
+
+    socket.on("chat", renderChatList);
+    socket.on("dm_chat", renderChatList);
+
+    socket.on("chat_error", (msg) => {
+      showNotification(msg, "#dc3545");
+    });
+
+    socket.on("reload_dm_if_with_deleted", ({ deletedEmail }) => {
+      if (chatMode === "dm" && currentTarget === deletedEmail) {
+        showNotification(`❌ ${deletedEmail} no longer exists`, "#dc3545");
+        document.getElementById("chat_list").innerHTML = "";
+        chatMode = "none";
+        currentTarget = null;
+        updateChatHeader("None");
+      }
+    });
+
+    socket.on("new_private_message", ({ from, to, message }) => {
+      const isCurrentDM =
+        chatMode === "dm" && (from === currentTarget || to === currentTarget);
+
+      if (isCurrentDM) {
+        const chatList = document.getElementById("chat_list");
+        const li = document.createElement("li");
+        li.innerHTML = `<strong style="color: ${from === myEmail ? '#28a745' : '#000'}">${from === myEmail ? 'You' : from}:</strong> ${message}`;
+        li.style.backgroundColor = from === myEmail ? "#d4edda" : "#e7f3ff";
+        chatList.appendChild(li);
+        chatList.scrollTop = chatList.scrollHeight;
+      } else {
+        showNotification(`📨 DM from ${from}: ${message}`, "#007bff", from);
+      }
+    });
+  </script>
+</body>
+</html>
+
