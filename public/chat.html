@@ -281,7 +281,13 @@
       chatList.scrollTop = chatList.scrollHeight;
     }
 
-    socket.on("chat", renderChatList);
+    socket.on("chat", (history) => {
+  // Render only if currently viewing a room
+  if (chatMode === "room" && currentTarget) {
+    renderChatList(history);
+  }
+});
+
     socket.on("dm_chat", renderChatList);
 
     socket.on("chat_error", (msg) => {
